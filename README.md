@@ -24,6 +24,7 @@ Testing is sadly impossible right now as the [Test::Nginx](https://github.com/op
 
 ## Modified version of original readme is below
 
+```
 Name
     nginx_stream_upstream_check_module - support upstream health check with
     Nginx in stream definitions
@@ -321,4 +322,4 @@ Copyright & License
     LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
     NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
     SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
+```
