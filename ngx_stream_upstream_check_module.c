@@ -243,6 +243,7 @@ struct ngx_stream_upstream_check_srv_conf_s {
     ngx_array_t                             *fastcgi_params;
 
     ngx_uint_t                               default_down;
+    ngx_uint_t                               log_level;
 };
 
 
@@ -368,6 +369,7 @@ static ngx_buf_t *ngx_stream_upstream_check_create_fastcgi_request(
 static ngx_int_t ngx_stream_upstream_check_fastcgi_parse(
     ngx_stream_upstream_check_peer_t *peer);
 static ngx_int_t ngx_stream_upstream_check_fastcgi_process_record(
+    ngx_stream_upstream_check_peer_t *peer,
     ngx_stream_upstream_check_ctx_t *ctx, ngx_buf_t *b,
     ngx_http_status_t *status);
 static ngx_int_t ngx_stream_upstream_check_parse_fastcgi_status(
@@ -493,6 +495,16 @@ static ngx_conf_bitmask_t  ngx_check_http_expect_alive_masks[] = {
     { ngx_string("http_5xx"), NGX_CHECK_HTTP_5XX },
     { ngx_null_string, 0 }
 };
+
+
+static ngx_conf_enum_t  ngx_stream_check_log_levels[] = {
+    { ngx_string("info"), NGX_LOG_INFO },
+    { ngx_string("notice"), NGX_LOG_NOTICE },
+    { ngx_string("warn"), NGX_LOG_WARN },
+    { ngx_string("error"), NGX_LOG_ERR },
+    { ngx_null_string, 0 }
+};
+
 
 static ngx_command_t ngx_stream_upstream_check_status_commands[] = {
 
@@ -1443,7 +1455,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
     ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "stream check send.");
 
     if (c->pool == NULL) {
-        ngx_log_error(NGX_LOG_ERR, event->log, 0,
+        ngx_log_error(peer->conf->log_level, event->log, 0,
                       "check pool NULL with peer: %V ",
                       &peer->check_peer_addr->name);
 
@@ -1453,7 +1465,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
     if (peer->state != NGX_STREAM_CHECK_CONNECT_DONE) {
         if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
 
-            ngx_log_error(NGX_LOG_ERR, event->log, 0,
+            ngx_log_error(peer->conf->log_level, event->log, 0,
                           "check handle write event error with peer: %V ",
                           &peer->check_peer_addr->name);
 
@@ -1473,7 +1485,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
 
         if (peer->init == NULL || peer->init(peer) != NGX_OK) {
 
-            ngx_log_error(NGX_LOG_ERR, event->log, 0,
+            ngx_log_error(peer->conf->log_level, event->log, 0,
                           "check init error with peer: %V ",
                           &peer->check_peer_addr->name);
 
@@ -1624,7 +1636,7 @@ ngx_stream_upstream_check_recv_handler(ngx_event_t *event)
         return;
 
     case NGX_ERROR:
-        ngx_log_error(NGX_LOG_ERR, event->log, 0,
+        ngx_log_error(peer->conf->log_level, event->log, 0,
                       "check protocol %V error with peer: %V ",
                       &peer->conf->check_type_conf->name,
                       &peer->check_peer_addr->name);
@@ -1694,7 +1706,7 @@ ngx_stream_upstream_check_http_parse(ngx_stream_upstream_check_peer_t *peer)
         }
 
         if (rc == NGX_ERROR) {
-            ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+            ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                           "http parse status line error with peer: %V ",
                           &peer->check_peer_addr->name);
             return rc;
@@ -1736,6 +1748,7 @@ ngx_stream_upstream_check_http_parse(ngx_stream_upstream_check_peer_t *peer)
 
 static ngx_int_t
 ngx_stream_upstream_check_fastcgi_process_record(
+    ngx_stream_upstream_check_peer_t *peer,
     ngx_stream_upstream_check_ctx_t *ctx, ngx_buf_t *b, ngx_http_status_t *status)
 {
     u_char                     ch, *p;
@@ -1754,7 +1767,7 @@ ngx_stream_upstream_check_fastcgi_process_record(
 
         case ngx_http_fastcgi_st_version:
             if (ch != 1) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                               "upstream sent unsupported FastCGI "
                               "protocol version: %d", ch);
                 return NGX_ERROR;
@@ -1770,7 +1783,7 @@ ngx_stream_upstream_check_fastcgi_process_record(
                 status->code = (ngx_uint_t) ch;
                 break;
             default:
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                               "upstream sent invalid FastCGI "
                               "record type: %d", ch);
                 return NGX_ERROR;
@@ -1783,7 +1796,7 @@ ngx_stream_upstream_check_fastcgi_process_record(
 
         case ngx_http_fastcgi_st_request_id_hi:
             if (ch != 0) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                               "upstream sent unexpected FastCGI "
                               "request id high byte: %d", ch);
                 return NGX_ERROR;
@@ -1793,7 +1806,7 @@ ngx_stream_upstream_check_fastcgi_process_record(
 
         case ngx_http_fastcgi_st_request_id_lo:
             if (ch != 1) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                               "upstream sent unexpected FastCGI "
                               "request id low byte: %d", ch);
                 return NGX_ERROR;
@@ -1858,8 +1871,8 @@ ngx_stream_upstream_check_fastcgi_parse(ngx_stream_upstream_check_peer_t *peer)
     for ( ;; ) {
 
         if (ctx->state < ngx_http_fastcgi_st_data) {
-            rc = ngx_stream_upstream_check_fastcgi_process_record(ctx,
-                    &ctx->recv, &ctx->status);
+            rc = ngx_stream_upstream_check_fastcgi_process_record(peer,
+                    ctx, &ctx->recv, &ctx->status);
 
             type = ctx->status.code;
 
@@ -1871,7 +1884,7 @@ ngx_stream_upstream_check_fastcgi_parse(ngx_stream_upstream_check_peer_t *peer)
             }
 
             if (rc == NGX_ERROR) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                    "check fastcgi parse status line error with peer: %V",
                    &peer->check_peer_addr->name);
 
@@ -1881,14 +1894,14 @@ ngx_stream_upstream_check_fastcgi_parse(ngx_stream_upstream_check_peer_t *peer)
             if (type != NGX_HTTP_FASTCGI_STDOUT
                 && type != NGX_HTTP_FASTCGI_STDERR)
             {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                    "check fastcgi sent unexpected FastCGI record: %d", type);
 
                 return NGX_ERROR;
             }
 
             if (type == NGX_HTTP_FASTCGI_STDOUT && ctx->length == 0) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                    "check fastcgi prematurely closed FastCGI stdout");
 
                 return NGX_ERROR;
@@ -1943,7 +1956,7 @@ ngx_stream_upstream_check_fastcgi_parse(ngx_stream_upstream_check_peer_t *peer)
                           "fastcgi http parse status line rc: %i ", rc);
 
             if (rc == NGX_ERROR) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                    "fastcgi http parse status line error with peer: %V ",
                     &peer->check_peer_addr->name);
                 return NGX_ERROR;
@@ -2695,7 +2708,7 @@ ngx_stream_upstream_check_status_update(ngx_stream_upstream_check_peer_t *peer,
         peer->shm->fall_count = 0;
         if (peer->shm->down && peer->shm->rise_count >= ucscf->rise_count) {
             peer->shm->down = 0;
-            ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+            ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                           "enable check peer: %V ",
                           &peer->check_peer_addr->name);
         }
@@ -2704,7 +2717,7 @@ ngx_stream_upstream_check_status_update(ngx_stream_upstream_check_peer_t *peer,
         peer->shm->fall_count++;
         if (!peer->shm->down && peer->shm->fall_count >= ucscf->fall_count) {
             peer->shm->down = 1;
-            ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+            ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                           "disable check peer: %V ",
                           &peer->check_peer_addr->name);
         }
@@ -2767,7 +2780,7 @@ ngx_stream_upstream_check_timeout_handler(ngx_event_t *event)
     peer = event->data;
     peer->pc.connection->error = 1;
 
-    ngx_log_error(NGX_LOG_ERR, event->log, 0,
+    ngx_log_error(peer->conf->log_level, event->log, 0,
                   "check time out with peer: %V ",
                   &peer->check_peer_addr->name);
 
@@ -3252,6 +3265,7 @@ ngx_stream_upstream_check(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 		    "*******************check stanza found**************************");
     ngx_str_t                           *value, s;
     ngx_uint_t                           i, port, rise, fall, default_down;
+    ngx_uint_t                           j, log_level;
     ngx_msec_t                           interval, timeout;
     ngx_stream_upstream_check_srv_conf_t  *ucscf;
 
@@ -3262,6 +3276,7 @@ ngx_stream_upstream_check(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     interval = 30000;
     timeout = 1000;
     default_down = 1;
+    log_level = NGX_LOG_ERR;
 
     value = cf->args->elts;
 
@@ -3365,6 +3380,30 @@ ngx_stream_upstream_check(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        if (ngx_strncmp(value[i].data, "log_level=", 10) == 0) {
+            s.len = value[i].len - 10;
+            s.data = value[i].data + 10;
+
+            for (j = 0; ngx_stream_check_log_levels[j].name.len != 0; j++) {
+                if (ngx_stream_check_log_levels[j].name.len != s.len
+                    || ngx_strcasecmp(ngx_stream_check_log_levels[j].name.data, s.data) != 0)
+                {
+                    continue;
+                }
+
+                log_level = ngx_stream_check_log_levels[j].value;
+                break;
+            }
+
+            if (ngx_stream_check_log_levels[j].name.len == 0) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid value \"%s\"",
+                                   value[i].data);
+                return NGX_CONF_ERROR;
+            }
+            continue;
+        }
+
         goto invalid_check_parameter;
     }
 
@@ -3374,6 +3413,7 @@ ngx_stream_upstream_check(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ucscf->fall_count = fall;
     ucscf->rise_count = rise;
     ucscf->default_down = default_down;
+    ucscf->log_level = log_level;
 
     if (ucscf->check_type_conf == NGX_CONF_UNSET_PTR) {
         ngx_str_set(&s, "tcp");
