@@ -1305,7 +1305,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
     c = event->data;
     peer = c->data;
 
-    ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "http check send.");
+    ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "stream check send.");
 
     if (c->pool == NULL) {
         ngx_log_error(NGX_LOG_ERR, event->log, 0,
@@ -1358,7 +1358,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
 
         err = (size >=0) ? 0 : ngx_socket_errno;
         ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, err,
-                       "http check send size: %z, total: %z",
+                       "stream check send size: %z, total: %z",
                        size, ctx->send.last - ctx->send.pos);
         }
 #endif
@@ -1374,7 +1374,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
     }
 
     if (ctx->send.pos == ctx->send.last) {
-        ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "http check send done.");
+        ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "stream check send done.");
         peer->state = NGX_STREAM_CHECK_SEND_DONE;
         c->requests++;
     }
@@ -1454,7 +1454,7 @@ ngx_stream_upstream_check_recv_handler(ngx_event_t *event)
 
         err = (size >= 0) ? 0 : ngx_socket_errno;
         ngx_log_debug2(NGX_LOG_DEBUG_STREAM, c->log, err,
-                       "http check recv size: %z, peer: %V ",
+                       "stream check recv size: %z, peer: %V ",
                        size, &peer->check_peer_addr->name);
         }
 #endif
@@ -1473,7 +1473,7 @@ ngx_stream_upstream_check_recv_handler(ngx_event_t *event)
     rc = peer->parse(peer);
 
     ngx_log_debug2(NGX_LOG_DEBUG_STREAM, c->log, 0,
-                   "http check parse rc: %i, peer: %V ",
+                   "stream check parse rc: %i, peer: %V ",
                    rc, &peer->check_peer_addr->name);
 
     switch (rc) {
@@ -2364,7 +2364,7 @@ ngx_stream_upstream_check_ssl_hello_parse(ngx_stream_upstream_check_peer_t *peer
     resp = (ngx_ssl_server_hello_t *) ctx->recv.pos;
 
     ngx_log_debug7(NGX_LOG_DEBUG_STREAM, ngx_cycle->log, 0,
-                   "http check ssl_parse, type: %ud, version: %ud.%ud, "
+                   "stream check ssl_parse, type: %ud, version: %ud.%ud, "
                    "length: %ud, handshanke_type: %ud, hello_version: %ud.%ud",
                    resp->msg_type, resp->version.major, resp->version.minor,
                    ntohs(resp->length), resp->handshake_type,
@@ -2592,7 +2592,7 @@ ngx_stream_upstream_check_clean_event(ngx_stream_upstream_check_peer_t *peer)
 
     if (c) {
         ngx_log_debug2(NGX_LOG_DEBUG_STREAM, c->log, 0,
-                       "http check clean event: index:%i, fd: %d",
+                       "stream check clean event: index:%i, fd: %d",
                        peer->index, c->fd);
         if (c->error == 0 &&
             cf->need_keepalive &&
@@ -3785,7 +3785,7 @@ ngx_stream_upstream_check_init_shm(ngx_conf_t *cf, void *conf)
                                          &ngx_stream_upstream_check_module);
 
         ngx_log_debug2(NGX_LOG_DEBUG_STREAM, cf->log, 0,
-                       "http upstream check, upsteam:%V, shm_zone size:%ui",
+                       "stream upstream check, upsteam:%V, shm_zone size:%ui",
                        shm_name, shm_size);
 
         shm_zone->data = cf->pool;
@@ -3969,7 +3969,7 @@ ngx_stream_upstream_check_init_shm_zone(ngx_shm_zone_t *shm_zone, void *data)
 
 failure:
     ngx_log_error(NGX_LOG_EMERG, shm_zone->shm.log, 0,
-                  "http upstream check_shm_size is too small, "
+                  "stream upstream check_shm_size is too small, "
                   "you should specify a larger size.");
     return NGX_ERROR;
 }
