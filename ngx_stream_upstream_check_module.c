@@ -157,6 +157,9 @@ typedef struct {
 #define NGX_STREAM_CHECK_SSL_HELLO             0x0004
 #define NGX_STREAM_CHECK_MYSQL                 0x0008
 #define NGX_STREAM_CHECK_AJP                   0x0010
+#define NGX_STREAM_CHECK_TLS10_HELLO           0x0020
+#define NGX_STREAM_CHECK_TLS11_HELLO           0x0040
+#define NGX_STREAM_CHECK_TLS12_HELLO           0x0080
 
 #define NGX_CHECK_HTTP_2XX                   0x0002
 #define NGX_CHECK_HTTP_3XX                   0x0004
@@ -650,6 +653,102 @@ static char sslv3_client_hello_pkt[] = {
 };
 
 
+/*
+ * This is the TLSv1.0 CLIENT HELLO packet used in conjunction with the
+ * check type of ssl_hello to ensure that the remote server speaks SSL.
+ *
+ * Check RFC 2246 (TLSv1.0) sections A.3 and A.4 for details.
+ */
+static char tlsv10_client_hello_pkt[] = {
+    "\x16"                /* ContentType         : 0x16 = Hanshake           */
+    "\x03\x01"            /* ProtocolVersion     : 0x0301 = TLS v1.0         */
+    "\x00\x79"            /* ContentLength       : 0x79 bytes after this one */
+    "\x01"                /* HanshakeType        : 0x01 = CLIENT HELLO       */
+    "\x00\x00\x75"        /* HandshakeLength     : 0x75 bytes after this one */
+    "\x03\x01"            /* Hello Version       : 0x0301 = TLS v1.0         */
+    "\x00\x00\x00\x00"    /* Unix GMT Time (s)   : filled with <now> (@0x0B) */
+    NGX_SSL_RANDOM        /* Random              : must be exactly 28 bytes  */
+    "\x00"                /* Session ID length   : empty (no session ID)     */
+    "\x00\x4E"            /* Cipher Suite Length : 78 bytes after this one   */
+    "\x00\x01" "\x00\x02" "\x00\x03" "\x00\x04" /* 39 most common ciphers :  */
+    "\x00\x05" "\x00\x06" "\x00\x07" "\x00\x08" /* 0x01...0x1B, 0x2F...0x3A  */
+    "\x00\x09" "\x00\x0A" "\x00\x0B" "\x00\x0C" /* This covers RSA/DH,       */
+    "\x00\x0D" "\x00\x0E" "\x00\x0F" "\x00\x10" /* various bit lengths,      */
+    "\x00\x11" "\x00\x12" "\x00\x13" "\x00\x14" /* SHA1/MD5, DES/3DES/AES... */
+    "\x00\x15" "\x00\x16" "\x00\x17" "\x00\x18"
+    "\x00\x19" "\x00\x1A" "\x00\x1B" "\x00\x2F"
+    "\x00\x30" "\x00\x31" "\x00\x32" "\x00\x33"
+    "\x00\x34" "\x00\x35" "\x00\x36" "\x00\x37"
+    "\x00\x38" "\x00\x39" "\x00\x3A"
+    "\x01"                /* Compression Length  : 0x01 = 1 byte for types   */
+    "\x00"                /* Compression Type    : 0x00 = NULL compression   */
+};
+
+
+/*
+ * This is the TLSv1.1 CLIENT HELLO packet used in conjunction with the
+ * check type of ssl_hello to ensure that the remote server speaks SSL.
+ *
+ * Check RFC 4346 (TLSv1.1) sections A.1 and A.4 for details.
+ */
+static char tlsv11_client_hello_pkt[] = {
+    "\x16"                /* ContentType         : 0x16 = Hanshake           */
+    "\x03\x02"            /* ProtocolVersion     : 0x0302 = TLS v1.1         */
+    "\x00\x79"            /* ContentLength       : 0x79 bytes after this one */
+    "\x01"                /* HanshakeType        : 0x01 = CLIENT HELLO       */
+    "\x00\x00\x75"        /* HandshakeLength     : 0x75 bytes after this one */
+    "\x03\x02"            /* Hello Version       : 0x0302 = TLS v1.1         */
+    "\x00\x00\x00\x00"    /* Unix GMT Time (s)   : filled with <now> (@0x0B) */
+    NGX_SSL_RANDOM        /* Random              : must be exactly 28 bytes  */
+    "\x00"                /* Session ID length   : empty (no session ID)     */
+    "\x00\x4E"            /* Cipher Suite Length : 78 bytes after this one   */
+    "\x00\x01" "\x00\x02" "\x00\x03" "\x00\x04" /* 39 most common ciphers :  */
+    "\x00\x05" "\x00\x06" "\x00\x07" "\x00\x08" /* 0x01...0x1B, 0x2F...0x3A  */
+    "\x00\x09" "\x00\x0A" "\x00\x0B" "\x00\x0C" /* This covers RSA/DH,       */
+    "\x00\x0D" "\x00\x0E" "\x00\x0F" "\x00\x10" /* various bit lengths,      */
+    "\x00\x11" "\x00\x12" "\x00\x13" "\x00\x14" /* SHA1/MD5, DES/3DES/AES... */
+    "\x00\x15" "\x00\x16" "\x00\x17" "\x00\x18"
+    "\x00\x19" "\x00\x1A" "\x00\x1B" "\x00\x2F"
+    "\x00\x30" "\x00\x31" "\x00\x32" "\x00\x33"
+    "\x00\x34" "\x00\x35" "\x00\x36" "\x00\x37"
+    "\x00\x38" "\x00\x39" "\x00\x3A"
+    "\x01"                /* Compression Length  : 0x01 = 1 byte for types   */
+    "\x00"                /* Compression Type    : 0x00 = NULL compression   */
+};
+
+
+/*
+ * This is the TLSv1.2 CLIENT HELLO packet used in conjunction with the
+ * check type of ssl_hello to ensure that the remote server speaks SSL.
+ *
+ * Check RFC 5246 (TLSv1.2) sections A.1 and A.4 for details.
+ */
+static char tlsv12_client_hello_pkt[] = {
+    "\x16"                /* ContentType         : 0x16 = Hanshake           */
+    "\x03\x03"            /* ProtocolVersion     : 0x0303 = TLS v1.2         */
+    "\x00\x79"            /* ContentLength       : 0x79 bytes after this one */
+    "\x01"                /* HanshakeType        : 0x01 = CLIENT HELLO       */
+    "\x00\x00\x75"        /* HandshakeLength     : 0x75 bytes after this one */
+    "\x03\x03"            /* Hello Version       : 0x0303 = TLS v1.2         */
+    "\x00\x00\x00\x00"    /* Unix GMT Time (s)   : filled with <now> (@0x0B) */
+    NGX_SSL_RANDOM        /* Random              : must be exactly 28 bytes  */
+    "\x00"                /* Session ID length   : empty (no session ID)     */
+    "\x00\x4E"            /* Cipher Suite Length : 78 bytes after this one   */
+    "\x00\x01" "\x00\x02" "\x00\x03" "\x00\x04" /* 39 most common ciphers :  */
+    "\x00\x05" "\x00\x06" "\x00\x07" "\x00\x08" /* 0x01...0x1B, 0x2F...0x3A  */
+    "\x00\x09" "\x00\x0A" "\x00\x0B" "\x00\x0C" /* This covers RSA/DH,       */
+    "\x00\x0D" "\x00\x0E" "\x00\x0F" "\x00\x10" /* various bit lengths,      */
+    "\x00\x11" "\x00\x12" "\x00\x13" "\x00\x14" /* SHA1/MD5, DES/3DES/AES... */
+    "\x00\x15" "\x00\x16" "\x00\x17" "\x00\x18"
+    "\x00\x19" "\x00\x1A" "\x00\x1B" "\x00\x2F"
+    "\x00\x30" "\x00\x31" "\x00\x32" "\x00\x33"
+    "\x00\x34" "\x00\x35" "\x00\x36" "\x00\x37"
+    "\x00\x38" "\x00\x39" "\x00\x3A"
+    "\x01"                /* Compression Length  : 0x01 = 1 byte for types   */
+    "\x00"                /* Compression Type    : 0x00 = NULL compression   */
+};
+
+
 #define NGX_SSL_HANDSHAKE    0x16
 #define NGX_SSL_SERVER_HELLO 0x02
 
@@ -708,6 +807,42 @@ static ngx_check_conf_t  ngx_check_types[] = {
     { NGX_STREAM_CHECK_SSL_HELLO,
       ngx_string("ssl_hello"),
       ngx_string(sslv3_client_hello_pkt),
+      0,
+      ngx_stream_upstream_check_send_handler,
+      ngx_stream_upstream_check_recv_handler,
+      ngx_stream_upstream_check_ssl_hello_init,
+      ngx_stream_upstream_check_ssl_hello_parse,
+      ngx_stream_upstream_check_ssl_hello_reinit,
+      1,
+      0 },
+
+    { NGX_STREAM_CHECK_TLS10_HELLO,
+      ngx_string("tlsv10_hello"),
+      ngx_string(tlsv10_client_hello_pkt),
+      0,
+      ngx_stream_upstream_check_send_handler,
+      ngx_stream_upstream_check_recv_handler,
+      ngx_stream_upstream_check_ssl_hello_init,
+      ngx_stream_upstream_check_ssl_hello_parse,
+      ngx_stream_upstream_check_ssl_hello_reinit,
+      1,
+      0 },
+
+    { NGX_STREAM_CHECK_TLS11_HELLO,
+      ngx_string("tlsv11_hello"),
+      ngx_string(tlsv11_client_hello_pkt),
+      0,
+      ngx_stream_upstream_check_send_handler,
+      ngx_stream_upstream_check_recv_handler,
+      ngx_stream_upstream_check_ssl_hello_init,
+      ngx_stream_upstream_check_ssl_hello_parse,
+      ngx_stream_upstream_check_ssl_hello_reinit,
+      1,
+      0 },
+
+    { NGX_STREAM_CHECK_TLS12_HELLO,
+      ngx_string("tlsv12_hello"),
+      ngx_string(tlsv12_client_hello_pkt),
       0,
       ngx_stream_upstream_check_send_handler,
       ngx_stream_upstream_check_recv_handler,
