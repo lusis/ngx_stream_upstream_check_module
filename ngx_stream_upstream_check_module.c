@@ -3364,7 +3364,7 @@ ngx_stream_upstream_check_http_expect_alive(ngx_conf_t *cf, ngx_command_t *cmd,
         }
 
         if (mask[m].name.len == 0) {
-            ngx_conf_log_error(NGX_LOG_WARN, cf, 0,
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "invalid value \"%s\"", value[i].data);
 
             return NGX_CONF_ERROR;
