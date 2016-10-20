@@ -2422,6 +2422,7 @@ static ngx_int_t
 ngx_stream_upstream_check_mysql_parse(ngx_stream_upstream_check_peer_t *peer)
 {
     size_t                         size;
+    size_t                         len;
     ngx_mysql_handshake_init_t    *handshake;
     ngx_stream_upstream_check_ctx_t *ctx;
 
@@ -2434,10 +2435,27 @@ ngx_stream_upstream_check_mysql_parse(ngx_stream_upstream_check_peer_t *peer)
 
     handshake = (ngx_mysql_handshake_init_t *) ctx->recv.pos;
 
-    ngx_log_debug3(NGX_LOG_DEBUG_STREAM, ngx_cycle->log, 0,
-                   "mysql_parse: packet_number=%ud, protocol=%ud, server=%s",
-                   handshake->packet_number, handshake->protocol_version,
-                   handshake->others);
+    len = ((size_t)handshake->packet_length[0])
+        + (((size_t)handshake->packet_length[1])<<8)
+        + (((size_t)handshake->packet_length[2])<<16);
+
+    if (len < 1) {
+        return NGX_ERROR;
+    }
+
+    /* Have we read whole packet? packet_length(3)+packet_number(1)+len bytes total */
+    if (size < (3+1+len)) {
+      /* We have only start of a packet, but not server name. */
+      ngx_log_debug2(NGX_LOG_DEBUG_STREAM, ngx_cycle->log, 0,
+                     "mysql_parse: packet_number=%ud, protocol=%ud",
+                     handshake->packet_number, handshake->protocol_version);
+    } else {
+      /* We have whole packet */
+      ngx_log_debug3(NGX_LOG_DEBUG_STREAM, ngx_cycle->log, 0,
+                     "mysql_parse: packet_number=%ud, protocol=%ud, server=%s",
+                     handshake->packet_number, handshake->protocol_version,
+                     handshake->others);
+    }
 
     /* The mysql greeting packet's serial number always begins with 0. */
     if (handshake->packet_number != 0x00) {
