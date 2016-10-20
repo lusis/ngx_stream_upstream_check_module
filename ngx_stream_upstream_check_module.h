@@ -1,5 +1,5 @@
-#ifndef _NGX_STREAM_UPSTREAM_CHECK_MODELE_H_INCLUDED_
-#define _NGX_STREAM_UPSTREAM_CHECK_MODELE_H_INCLUDED_
+#ifndef _NGX_STREAM_UPSTREAM_CHECK_MODULE_H_INCLUDED_
+#define _NGX_STREAM_UPSTREAM_CHECK_MODULE_H_INCLUDED_
 
 
 #include <ngx_config.h>
@@ -14,5 +14,5 @@ void ngx_stream_upstream_check_get_peer(ngx_uint_t index);
 void ngx_stream_upstream_check_free_peer(ngx_uint_t index);
 
 
-#endif //_NGX_STREAM_UPSTREAM_CHECK_MODELE_H_INCLUDED_
+#endif //_NGX_STREAM_UPSTREAM_CHECK_MODULE_H_INCLUDED_
 
