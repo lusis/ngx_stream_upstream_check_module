@@ -16,7 +16,7 @@ diff -ur nginx-1.13.6-orig/src/stream/ngx_stream_upstream_hash_module.c nginx-1.
              goto next;
          }
 +#if (NGX_STREAM_UPSTREAM_CHECK)
-+	ngx_log_debug2(NGX_LOG_DEBUG_STREAM, pc->log, 0,
++	ngx_log_debug1(NGX_LOG_DEBUG_STREAM, pc->log, 0,
 +			"get hash peer, check_index: %ui",
 +			peer->check_index);
 +
@@ -32,7 +32,7 @@ diff -ur nginx-1.13.6-orig/src/stream/ngx_stream_upstream_hash_module.c nginx-1.
              }
  
 +#if (NGX_STREAM_UPSTREAM_CHECK)
-+	    ngx_log_debug2(NGX_LOG_DEBUG_STREAM, pc->log, 0,
++	    ngx_log_debug1(NGX_LOG_DEBUG_STREAM, pc->log, 0,
 +			   "get consistent hash peer, check_index: %ui",
 +			   peer->check_index);
 +
