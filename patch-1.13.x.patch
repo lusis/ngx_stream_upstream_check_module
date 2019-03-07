@@ -6,7 +6,7 @@ diff -ur nginx-1.13.6-orig/src/stream/ngx_stream_upstream_hash_module.c nginx-1.
  #include <ngx_stream.h>
  
 +#if (NGX_STREMA_UPSTREAM_CHECK)
-+#include "nginx_stream_upstream_check_module.h"
++#include "ngx_stream_upstream_check_module.h"
 +#endif
  
  typedef struct {
@@ -52,7 +52,7 @@ diff -ur nginx-1.13.6-orig/src/stream/ngx_stream_upstream_least_conn_module.c ng
  #include <ngx_stream.h>
  
 +#if (NGX_STREAM_UPSTREAM_CHECK)
-+#include "nginx_stream_upstream_check_module.h"
++#include "ngx_stream_upstream_check_module.h"
 +#endif
 +
  
