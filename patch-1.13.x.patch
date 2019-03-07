@@ -144,7 +144,7 @@ diff -ur nginx-1.13.6-orig/src/stream/ngx_stream_upstream_round_robin.h nginx-1.
      ngx_uint_t                       max_fails;
      time_t                           fail_timeout;
 +
-+#if (NGX_STREAM_USPTREAM_CHECK)
++#if (NGX_STREAM_UPSTREAM_CHECK)
 +    ngx_uint_t			     check_index;
 +#endif
 +
