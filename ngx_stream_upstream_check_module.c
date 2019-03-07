@@ -157,6 +157,9 @@ typedef struct {
 #define NGX_STREAM_CHECK_SSL_HELLO             0x0004
 #define NGX_STREAM_CHECK_MYSQL                 0x0008
 #define NGX_STREAM_CHECK_AJP                   0x0010
+#define NGX_STREAM_CHECK_TLS10_HELLO           0x0020
+#define NGX_STREAM_CHECK_TLS11_HELLO           0x0040
+#define NGX_STREAM_CHECK_TLS12_HELLO           0x0080
 
 #define NGX_CHECK_HTTP_2XX                   0x0002
 #define NGX_CHECK_HTTP_3XX                   0x0004
@@ -240,6 +243,7 @@ struct ngx_stream_upstream_check_srv_conf_s {
     ngx_array_t                             *fastcgi_params;
 
     ngx_uint_t                               default_down;
+    ngx_uint_t                               log_level;
 };
 
 
@@ -365,6 +369,7 @@ static ngx_buf_t *ngx_stream_upstream_check_create_fastcgi_request(
 static ngx_int_t ngx_stream_upstream_check_fastcgi_parse(
     ngx_stream_upstream_check_peer_t *peer);
 static ngx_int_t ngx_stream_upstream_check_fastcgi_process_record(
+    ngx_stream_upstream_check_peer_t *peer,
     ngx_stream_upstream_check_ctx_t *ctx, ngx_buf_t *b,
     ngx_http_status_t *status);
 static ngx_int_t ngx_stream_upstream_check_parse_fastcgi_status(
@@ -491,6 +496,16 @@ static ngx_conf_bitmask_t  ngx_check_http_expect_alive_masks[] = {
     { ngx_null_string, 0 }
 };
 
+
+static ngx_conf_enum_t  ngx_stream_check_log_levels[] = {
+    { ngx_string("info"), NGX_LOG_INFO },
+    { ngx_string("notice"), NGX_LOG_NOTICE },
+    { ngx_string("warn"), NGX_LOG_WARN },
+    { ngx_string("error"), NGX_LOG_ERR },
+    { ngx_null_string, 0 }
+};
+
+
 static ngx_command_t ngx_stream_upstream_check_status_commands[] = {
 
     { ngx_string("stream_check_status"),
@@ -572,7 +587,7 @@ ngx_module_t  ngx_stream_upstream_check_status_module = {
     NGX_HTTP_MODULE,                       /* module type */
     NULL,                                  /* init master */
     NULL,                                  /* init module */
-    ngx_stream_upstream_check_init_process,  /* init process */
+    NULL,                                  /* init process */
     NULL,                                  /* init thread */
     NULL,                                  /* exit thread */
     NULL,                                  /* exit process */
@@ -650,6 +665,102 @@ static char sslv3_client_hello_pkt[] = {
 };
 
 
+/*
+ * This is the TLSv1.0 CLIENT HELLO packet used in conjunction with the
+ * check type of ssl_hello to ensure that the remote server speaks SSL.
+ *
+ * Check RFC 2246 (TLSv1.0) sections A.3 and A.4 for details.
+ */
+static char tlsv10_client_hello_pkt[] = {
+    "\x16"                /* ContentType         : 0x16 = Hanshake           */
+    "\x03\x01"            /* ProtocolVersion     : 0x0301 = TLS v1.0         */
+    "\x00\x79"            /* ContentLength       : 0x79 bytes after this one */
+    "\x01"                /* HanshakeType        : 0x01 = CLIENT HELLO       */
+    "\x00\x00\x75"        /* HandshakeLength     : 0x75 bytes after this one */
+    "\x03\x01"            /* Hello Version       : 0x0301 = TLS v1.0         */
+    "\x00\x00\x00\x00"    /* Unix GMT Time (s)   : filled with <now> (@0x0B) */
+    NGX_SSL_RANDOM        /* Random              : must be exactly 28 bytes  */
+    "\x00"                /* Session ID length   : empty (no session ID)     */
+    "\x00\x4E"            /* Cipher Suite Length : 78 bytes after this one   */
+    "\x00\x01" "\x00\x02" "\x00\x03" "\x00\x04" /* 39 most common ciphers :  */
+    "\x00\x05" "\x00\x06" "\x00\x07" "\x00\x08" /* 0x01...0x1B, 0x2F...0x3A  */
+    "\x00\x09" "\x00\x0A" "\x00\x0B" "\x00\x0C" /* This covers RSA/DH,       */
+    "\x00\x0D" "\x00\x0E" "\x00\x0F" "\x00\x10" /* various bit lengths,      */
+    "\x00\x11" "\x00\x12" "\x00\x13" "\x00\x14" /* SHA1/MD5, DES/3DES/AES... */
+    "\x00\x15" "\x00\x16" "\x00\x17" "\x00\x18"
+    "\x00\x19" "\x00\x1A" "\x00\x1B" "\x00\x2F"
+    "\x00\x30" "\x00\x31" "\x00\x32" "\x00\x33"
+    "\x00\x34" "\x00\x35" "\x00\x36" "\x00\x37"
+    "\x00\x38" "\x00\x39" "\x00\x3A"
+    "\x01"                /* Compression Length  : 0x01 = 1 byte for types   */
+    "\x00"                /* Compression Type    : 0x00 = NULL compression   */
+};
+
+
+/*
+ * This is the TLSv1.1 CLIENT HELLO packet used in conjunction with the
+ * check type of ssl_hello to ensure that the remote server speaks SSL.
+ *
+ * Check RFC 4346 (TLSv1.1) sections A.1 and A.4 for details.
+ */
+static char tlsv11_client_hello_pkt[] = {
+    "\x16"                /* ContentType         : 0x16 = Hanshake           */
+    "\x03\x02"            /* ProtocolVersion     : 0x0302 = TLS v1.1         */
+    "\x00\x79"            /* ContentLength       : 0x79 bytes after this one */
+    "\x01"                /* HanshakeType        : 0x01 = CLIENT HELLO       */
+    "\x00\x00\x75"        /* HandshakeLength     : 0x75 bytes after this one */
+    "\x03\x02"            /* Hello Version       : 0x0302 = TLS v1.1         */
+    "\x00\x00\x00\x00"    /* Unix GMT Time (s)   : filled with <now> (@0x0B) */
+    NGX_SSL_RANDOM        /* Random              : must be exactly 28 bytes  */
+    "\x00"                /* Session ID length   : empty (no session ID)     */
+    "\x00\x4E"            /* Cipher Suite Length : 78 bytes after this one   */
+    "\x00\x01" "\x00\x02" "\x00\x03" "\x00\x04" /* 39 most common ciphers :  */
+    "\x00\x05" "\x00\x06" "\x00\x07" "\x00\x08" /* 0x01...0x1B, 0x2F...0x3A  */
+    "\x00\x09" "\x00\x0A" "\x00\x0B" "\x00\x0C" /* This covers RSA/DH,       */
+    "\x00\x0D" "\x00\x0E" "\x00\x0F" "\x00\x10" /* various bit lengths,      */
+    "\x00\x11" "\x00\x12" "\x00\x13" "\x00\x14" /* SHA1/MD5, DES/3DES/AES... */
+    "\x00\x15" "\x00\x16" "\x00\x17" "\x00\x18"
+    "\x00\x19" "\x00\x1A" "\x00\x1B" "\x00\x2F"
+    "\x00\x30" "\x00\x31" "\x00\x32" "\x00\x33"
+    "\x00\x34" "\x00\x35" "\x00\x36" "\x00\x37"
+    "\x00\x38" "\x00\x39" "\x00\x3A"
+    "\x01"                /* Compression Length  : 0x01 = 1 byte for types   */
+    "\x00"                /* Compression Type    : 0x00 = NULL compression   */
+};
+
+
+/*
+ * This is the TLSv1.2 CLIENT HELLO packet used in conjunction with the
+ * check type of ssl_hello to ensure that the remote server speaks SSL.
+ *
+ * Check RFC 5246 (TLSv1.2) sections A.1 and A.4 for details.
+ */
+static char tlsv12_client_hello_pkt[] = {
+    "\x16"                /* ContentType         : 0x16 = Hanshake           */
+    "\x03\x03"            /* ProtocolVersion     : 0x0303 = TLS v1.2         */
+    "\x00\x79"            /* ContentLength       : 0x79 bytes after this one */
+    "\x01"                /* HanshakeType        : 0x01 = CLIENT HELLO       */
+    "\x00\x00\x75"        /* HandshakeLength     : 0x75 bytes after this one */
+    "\x03\x03"            /* Hello Version       : 0x0303 = TLS v1.2         */
+    "\x00\x00\x00\x00"    /* Unix GMT Time (s)   : filled with <now> (@0x0B) */
+    NGX_SSL_RANDOM        /* Random              : must be exactly 28 bytes  */
+    "\x00"                /* Session ID length   : empty (no session ID)     */
+    "\x00\x4E"            /* Cipher Suite Length : 78 bytes after this one   */
+    "\x00\x01" "\x00\x02" "\x00\x03" "\x00\x04" /* 39 most common ciphers :  */
+    "\x00\x05" "\x00\x06" "\x00\x07" "\x00\x08" /* 0x01...0x1B, 0x2F...0x3A  */
+    "\x00\x09" "\x00\x0A" "\x00\x0B" "\x00\x0C" /* This covers RSA/DH,       */
+    "\x00\x0D" "\x00\x0E" "\x00\x0F" "\x00\x10" /* various bit lengths,      */
+    "\x00\x11" "\x00\x12" "\x00\x13" "\x00\x14" /* SHA1/MD5, DES/3DES/AES... */
+    "\x00\x15" "\x00\x16" "\x00\x17" "\x00\x18"
+    "\x00\x19" "\x00\x1A" "\x00\x1B" "\x00\x2F"
+    "\x00\x30" "\x00\x31" "\x00\x32" "\x00\x33"
+    "\x00\x34" "\x00\x35" "\x00\x36" "\x00\x37"
+    "\x00\x38" "\x00\x39" "\x00\x3A"
+    "\x01"                /* Compression Length  : 0x01 = 1 byte for types   */
+    "\x00"                /* Compression Type    : 0x00 = NULL compression   */
+};
+
+
 #define NGX_SSL_HANDSHAKE    0x16
 #define NGX_SSL_SERVER_HELLO 0x02
 
@@ -708,6 +819,42 @@ static ngx_check_conf_t  ngx_check_types[] = {
     { NGX_STREAM_CHECK_SSL_HELLO,
       ngx_string("ssl_hello"),
       ngx_string(sslv3_client_hello_pkt),
+      0,
+      ngx_stream_upstream_check_send_handler,
+      ngx_stream_upstream_check_recv_handler,
+      ngx_stream_upstream_check_ssl_hello_init,
+      ngx_stream_upstream_check_ssl_hello_parse,
+      ngx_stream_upstream_check_ssl_hello_reinit,
+      1,
+      0 },
+
+    { NGX_STREAM_CHECK_TLS10_HELLO,
+      ngx_string("tlsv10_hello"),
+      ngx_string(tlsv10_client_hello_pkt),
+      0,
+      ngx_stream_upstream_check_send_handler,
+      ngx_stream_upstream_check_recv_handler,
+      ngx_stream_upstream_check_ssl_hello_init,
+      ngx_stream_upstream_check_ssl_hello_parse,
+      ngx_stream_upstream_check_ssl_hello_reinit,
+      1,
+      0 },
+
+    { NGX_STREAM_CHECK_TLS11_HELLO,
+      ngx_string("tlsv11_hello"),
+      ngx_string(tlsv11_client_hello_pkt),
+      0,
+      ngx_stream_upstream_check_send_handler,
+      ngx_stream_upstream_check_recv_handler,
+      ngx_stream_upstream_check_ssl_hello_init,
+      ngx_stream_upstream_check_ssl_hello_parse,
+      ngx_stream_upstream_check_ssl_hello_reinit,
+      1,
+      0 },
+
+    { NGX_STREAM_CHECK_TLS12_HELLO,
+      ngx_string("tlsv12_hello"),
+      ngx_string(tlsv12_client_hello_pkt),
       0,
       ngx_stream_upstream_check_send_handler,
       ngx_stream_upstream_check_recv_handler,
@@ -993,8 +1140,6 @@ ngx_stream_upstream_check_add_timers(ngx_cycle_t *cycle)
                    "peer number: %ud",
                    &peers->check_shm_name,
                    peers->peers.nelts);
-
-    srandom(ngx_pid);
 
     peer = peers->peers.elts;
     peer_shm = peers_shm->peers;
@@ -1307,10 +1452,10 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
     c = event->data;
     peer = c->data;
 
-    ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "http check send.");
+    ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "stream check send.");
 
     if (c->pool == NULL) {
-        ngx_log_error(NGX_LOG_ERR, event->log, 0,
+        ngx_log_error(peer->conf->log_level, event->log, 0,
                       "check pool NULL with peer: %V ",
                       &peer->check_peer_addr->name);
 
@@ -1320,7 +1465,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
     if (peer->state != NGX_STREAM_CHECK_CONNECT_DONE) {
         if (ngx_handle_write_event(c->write, 0) != NGX_OK) {
 
-            ngx_log_error(NGX_LOG_ERR, event->log, 0,
+            ngx_log_error(peer->conf->log_level, event->log, 0,
                           "check handle write event error with peer: %V ",
                           &peer->check_peer_addr->name);
 
@@ -1340,7 +1485,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
 
         if (peer->init == NULL || peer->init(peer) != NGX_OK) {
 
-            ngx_log_error(NGX_LOG_ERR, event->log, 0,
+            ngx_log_error(peer->conf->log_level, event->log, 0,
                           "check init error with peer: %V ",
                           &peer->check_peer_addr->name);
 
@@ -1360,7 +1505,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
 
         err = (size >=0) ? 0 : ngx_socket_errno;
         ngx_log_error(NGX_LOG_DEBUG, ngx_cycle->log, err,
-                       "http check send size: %z, total: %z",
+                       "stream check send size: %z, total: %z",
                        size, ctx->send.last - ctx->send.pos);
         }
 #endif
@@ -1376,7 +1521,7 @@ ngx_stream_upstream_check_send_handler(ngx_event_t *event)
     }
 
     if (ctx->send.pos == ctx->send.last) {
-        ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "http check send done.");
+        ngx_log_debug0(NGX_LOG_DEBUG_STREAM, c->log, 0, "stream check send done.");
         peer->state = NGX_STREAM_CHECK_SEND_DONE;
         c->requests++;
     }
@@ -1456,7 +1601,7 @@ ngx_stream_upstream_check_recv_handler(ngx_event_t *event)
 
         err = (size >= 0) ? 0 : ngx_socket_errno;
         ngx_log_debug2(NGX_LOG_DEBUG_STREAM, c->log, err,
-                       "http check recv size: %z, peer: %V ",
+                       "stream check recv size: %z, peer: %V ",
                        size, &peer->check_peer_addr->name);
         }
 #endif
@@ -1475,7 +1620,7 @@ ngx_stream_upstream_check_recv_handler(ngx_event_t *event)
     rc = peer->parse(peer);
 
     ngx_log_debug2(NGX_LOG_DEBUG_STREAM, c->log, 0,
-                   "http check parse rc: %i, peer: %V ",
+                   "stream check parse rc: %i, peer: %V ",
                    rc, &peer->check_peer_addr->name);
 
     switch (rc) {
@@ -1491,7 +1636,7 @@ ngx_stream_upstream_check_recv_handler(ngx_event_t *event)
         return;
 
     case NGX_ERROR:
-        ngx_log_error(NGX_LOG_ERR, event->log, 0,
+        ngx_log_error(peer->conf->log_level, event->log, 0,
                       "check protocol %V error with peer: %V ",
                       &peer->conf->check_type_conf->name,
                       &peer->check_peer_addr->name);
@@ -1561,7 +1706,7 @@ ngx_stream_upstream_check_http_parse(ngx_stream_upstream_check_peer_t *peer)
         }
 
         if (rc == NGX_ERROR) {
-            ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+            ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                           "http parse status line error with peer: %V ",
                           &peer->check_peer_addr->name);
             return rc;
@@ -1603,6 +1748,7 @@ ngx_stream_upstream_check_http_parse(ngx_stream_upstream_check_peer_t *peer)
 
 static ngx_int_t
 ngx_stream_upstream_check_fastcgi_process_record(
+    ngx_stream_upstream_check_peer_t *peer,
     ngx_stream_upstream_check_ctx_t *ctx, ngx_buf_t *b, ngx_http_status_t *status)
 {
     u_char                     ch, *p;
@@ -1621,7 +1767,7 @@ ngx_stream_upstream_check_fastcgi_process_record(
 
         case ngx_http_fastcgi_st_version:
             if (ch != 1) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                               "upstream sent unsupported FastCGI "
                               "protocol version: %d", ch);
                 return NGX_ERROR;
@@ -1637,7 +1783,7 @@ ngx_stream_upstream_check_fastcgi_process_record(
                 status->code = (ngx_uint_t) ch;
                 break;
             default:
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                               "upstream sent invalid FastCGI "
                               "record type: %d", ch);
                 return NGX_ERROR;
@@ -1650,7 +1796,7 @@ ngx_stream_upstream_check_fastcgi_process_record(
 
         case ngx_http_fastcgi_st_request_id_hi:
             if (ch != 0) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                               "upstream sent unexpected FastCGI "
                               "request id high byte: %d", ch);
                 return NGX_ERROR;
@@ -1660,7 +1806,7 @@ ngx_stream_upstream_check_fastcgi_process_record(
 
         case ngx_http_fastcgi_st_request_id_lo:
             if (ch != 1) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                               "upstream sent unexpected FastCGI "
                               "request id low byte: %d", ch);
                 return NGX_ERROR;
@@ -1725,8 +1871,8 @@ ngx_stream_upstream_check_fastcgi_parse(ngx_stream_upstream_check_peer_t *peer)
     for ( ;; ) {
 
         if (ctx->state < ngx_http_fastcgi_st_data) {
-            rc = ngx_stream_upstream_check_fastcgi_process_record(ctx,
-                    &ctx->recv, &ctx->status);
+            rc = ngx_stream_upstream_check_fastcgi_process_record(peer,
+                    ctx, &ctx->recv, &ctx->status);
 
             type = ctx->status.code;
 
@@ -1738,7 +1884,7 @@ ngx_stream_upstream_check_fastcgi_parse(ngx_stream_upstream_check_peer_t *peer)
             }
 
             if (rc == NGX_ERROR) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                    "check fastcgi parse status line error with peer: %V",
                    &peer->check_peer_addr->name);
 
@@ -1748,14 +1894,14 @@ ngx_stream_upstream_check_fastcgi_parse(ngx_stream_upstream_check_peer_t *peer)
             if (type != NGX_HTTP_FASTCGI_STDOUT
                 && type != NGX_HTTP_FASTCGI_STDERR)
             {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                    "check fastcgi sent unexpected FastCGI record: %d", type);
 
                 return NGX_ERROR;
             }
 
             if (type == NGX_HTTP_FASTCGI_STDOUT && ctx->length == 0) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                    "check fastcgi prematurely closed FastCGI stdout");
 
                 return NGX_ERROR;
@@ -1810,7 +1956,7 @@ ngx_stream_upstream_check_fastcgi_parse(ngx_stream_upstream_check_peer_t *peer)
                           "fastcgi http parse status line rc: %i ", rc);
 
             if (rc == NGX_ERROR) {
-                ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+                ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                    "fastcgi http parse status line error with peer: %V ",
                     &peer->check_peer_addr->name);
                 return NGX_ERROR;
@@ -2366,7 +2512,7 @@ ngx_stream_upstream_check_ssl_hello_parse(ngx_stream_upstream_check_peer_t *peer
     resp = (ngx_ssl_server_hello_t *) ctx->recv.pos;
 
     ngx_log_debug7(NGX_LOG_DEBUG_STREAM, ngx_cycle->log, 0,
-                   "http check ssl_parse, type: %ud, version: %ud.%ud, "
+                   "stream check ssl_parse, type: %ud, version: %ud.%ud, "
                    "length: %ud, handshanke_type: %ud, hello_version: %ud.%ud",
                    resp->msg_type, resp->version.major, resp->version.minor,
                    ntohs(resp->length), resp->handshake_type,
@@ -2422,6 +2568,7 @@ static ngx_int_t
 ngx_stream_upstream_check_mysql_parse(ngx_stream_upstream_check_peer_t *peer)
 {
     size_t                         size;
+    size_t                         len;
     ngx_mysql_handshake_init_t    *handshake;
     ngx_stream_upstream_check_ctx_t *ctx;
 
@@ -2434,10 +2581,27 @@ ngx_stream_upstream_check_mysql_parse(ngx_stream_upstream_check_peer_t *peer)
 
     handshake = (ngx_mysql_handshake_init_t *) ctx->recv.pos;
 
-    ngx_log_debug3(NGX_LOG_DEBUG_STREAM, ngx_cycle->log, 0,
-                   "mysql_parse: packet_number=%ud, protocol=%ud, server=%s",
-                   handshake->packet_number, handshake->protocol_version,
-                   handshake->others);
+    len = ((size_t)handshake->packet_length[0])
+        + (((size_t)handshake->packet_length[1])<<8)
+        + (((size_t)handshake->packet_length[2])<<16);
+
+    if (len < 1) {
+        return NGX_ERROR;
+    }
+
+    /* Have we read whole packet? packet_length(3)+packet_number(1)+len bytes total */
+    if (size < (3+1+len)) {
+      /* We have only start of a packet, but not server name. */
+      ngx_log_debug2(NGX_LOG_DEBUG_STREAM, ngx_cycle->log, 0,
+                     "mysql_parse: packet_number=%ud, protocol=%ud",
+                     handshake->packet_number, handshake->protocol_version);
+    } else {
+      /* We have whole packet */
+      ngx_log_debug3(NGX_LOG_DEBUG_STREAM, ngx_cycle->log, 0,
+                     "mysql_parse: packet_number=%ud, protocol=%ud, server=%s",
+                     handshake->packet_number, handshake->protocol_version,
+                     handshake->others);
+    }
 
     /* The mysql greeting packet's serial number always begins with 0. */
     if (handshake->packet_number != 0x00) {
@@ -2544,7 +2708,7 @@ ngx_stream_upstream_check_status_update(ngx_stream_upstream_check_peer_t *peer,
         peer->shm->fall_count = 0;
         if (peer->shm->down && peer->shm->rise_count >= ucscf->rise_count) {
             peer->shm->down = 0;
-            ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+            ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                           "enable check peer: %V ",
                           &peer->check_peer_addr->name);
         }
@@ -2553,7 +2717,7 @@ ngx_stream_upstream_check_status_update(ngx_stream_upstream_check_peer_t *peer,
         peer->shm->fall_count++;
         if (!peer->shm->down && peer->shm->fall_count >= ucscf->fall_count) {
             peer->shm->down = 1;
-            ngx_log_error(NGX_LOG_ERR, ngx_cycle->log, 0,
+            ngx_log_error(peer->conf->log_level, ngx_cycle->log, 0,
                           "disable check peer: %V ",
                           &peer->check_peer_addr->name);
         }
@@ -2576,7 +2740,7 @@ ngx_stream_upstream_check_clean_event(ngx_stream_upstream_check_peer_t *peer)
 
     if (c) {
         ngx_log_debug2(NGX_LOG_DEBUG_STREAM, c->log, 0,
-                       "http check clean event: index:%i, fd: %d",
+                       "stream check clean event: index:%i, fd: %d",
                        peer->index, c->fd);
         if (c->error == 0 &&
             cf->need_keepalive &&
@@ -2616,7 +2780,7 @@ ngx_stream_upstream_check_timeout_handler(ngx_event_t *event)
     peer = event->data;
     peer->pc.connection->error = 1;
 
-    ngx_log_error(NGX_LOG_ERR, event->log, 0,
+    ngx_log_error(peer->conf->log_level, event->log, 0,
                   "check time out with peer: %V ",
                   &peer->check_peer_addr->name);
 
@@ -2713,7 +2877,7 @@ ngx_stream_upstream_check_status_handler(ngx_http_request_t *r)
         return rc;
     }
 
-    uclcf = ngx_http_get_module_loc_conf(r, ngx_stream_upstream_check_module);
+    uclcf = ngx_http_get_module_loc_conf(r, ngx_stream_upstream_check_status_module);
 
     ctx = ngx_pcalloc(r->pool, sizeof(ngx_stream_upstream_check_status_ctx_t));
     if (ctx == NULL) {
@@ -3101,6 +3265,7 @@ ngx_stream_upstream_check(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
 		    "*******************check stanza found**************************");
     ngx_str_t                           *value, s;
     ngx_uint_t                           i, port, rise, fall, default_down;
+    ngx_uint_t                           j, log_level;
     ngx_msec_t                           interval, timeout;
     ngx_stream_upstream_check_srv_conf_t  *ucscf;
 
@@ -3111,6 +3276,7 @@ ngx_stream_upstream_check(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     interval = 30000;
     timeout = 1000;
     default_down = 1;
+    log_level = NGX_LOG_ERR;
 
     value = cf->args->elts;
 
@@ -3214,6 +3380,30 @@ ngx_stream_upstream_check(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
             continue;
         }
 
+        if (ngx_strncmp(value[i].data, "log_level=", 10) == 0) {
+            s.len = value[i].len - 10;
+            s.data = value[i].data + 10;
+
+            for (j = 0; ngx_stream_check_log_levels[j].name.len != 0; j++) {
+                if (ngx_stream_check_log_levels[j].name.len != s.len
+                    || ngx_strcasecmp(ngx_stream_check_log_levels[j].name.data, s.data) != 0)
+                {
+                    continue;
+                }
+
+                log_level = ngx_stream_check_log_levels[j].value;
+                break;
+            }
+
+            if (ngx_stream_check_log_levels[j].name.len == 0) {
+                ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
+                                   "invalid value \"%s\"",
+                                   value[i].data);
+                return NGX_CONF_ERROR;
+            }
+            continue;
+        }
+
         goto invalid_check_parameter;
     }
 
@@ -3223,6 +3413,7 @@ ngx_stream_upstream_check(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     ucscf->fall_count = fall;
     ucscf->rise_count = rise;
     ucscf->default_down = default_down;
+    ucscf->log_level = log_level;
 
     if (ucscf->check_type_conf == NGX_CONF_UNSET_PTR) {
         ngx_str_set(&s, "tcp");
@@ -3348,7 +3539,7 @@ ngx_stream_upstream_check_http_expect_alive(ngx_conf_t *cf, ngx_command_t *cmd,
         }
 
         if (mask[m].name.len == 0) {
-            ngx_conf_log_error(NGX_LOG_WARN, cf, 0,
+            ngx_conf_log_error(NGX_LOG_EMERG, cf, 0,
                                "invalid value \"%s\"", value[i].data);
 
             return NGX_CONF_ERROR;
@@ -3424,8 +3615,7 @@ ngx_stream_upstream_check_status(ngx_conf_t *cf, ngx_command_t *cmd, void *conf)
     clcf->handler = ngx_stream_upstream_check_status_handler;
 
     if (cf->args->nelts == 2) {
-        uclcf = ngx_http_conf_get_module_loc_conf(cf,
-                                              ngx_stream_upstream_check_module);
+        uclcf = ngx_http_conf_get_module_loc_conf(cf, ngx_stream_upstream_check_status_module);
 
         uclcf->format = ngx_http_get_check_status_format_conf(&value[1]);
         if (uclcf->format == NULL) {
@@ -3770,7 +3960,7 @@ ngx_stream_upstream_check_init_shm(ngx_conf_t *cf, void *conf)
                                          &ngx_stream_upstream_check_module);
 
         ngx_log_debug2(NGX_LOG_DEBUG_STREAM, cf->log, 0,
-                       "http upstream check, upsteam:%V, shm_zone size:%ui",
+                       "stream upstream check, upsteam:%V, shm_zone size:%ui",
                        shm_name, shm_size);
 
         shm_zone->data = cf->pool;
@@ -3954,7 +4144,7 @@ ngx_stream_upstream_check_init_shm_zone(ngx_shm_zone_t *shm_zone, void *data)
 
 failure:
     ngx_log_error(NGX_LOG_EMERG, shm_zone->shm.log, 0,
-                  "http upstream check_shm_size is too small, "
+                  "stream upstream check_shm_size is too small, "
                   "you should specify a larger size.");
     return NGX_ERROR;
 }
