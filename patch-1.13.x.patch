@@ -5,7 +5,7 @@ diff -ur nginx-1.13.6-orig/src/stream/ngx_stream_upstream_hash_module.c nginx-1.
  #include <ngx_core.h>
  #include <ngx_stream.h>
  
-+#if (NGX_STREMA_UPSTREAM_CHECK)
++#if (NGX_STREAM_UPSTREAM_CHECK)
 +#include "ngx_stream_upstream_check_module.h"
 +#endif
  
